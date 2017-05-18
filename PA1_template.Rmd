@@ -8,18 +8,168 @@ output:
 
 ## Loading and preprocessing the data
 
+```{r}
 
+library(lubridate)
+library(dplyr)
+library(ggplot2)
+library(stringr)
+library(scales)
+
+activity <- read.csv2("activity.csv", sep = ",") %>%
+    mutate(date = ymd(date))
+
+```
+
+The data is in the variable "activity"
 
 ## What is mean total number of steps taken per day?
 
+First we group activity by date
+and calculate the total number of steps for each group
 
+Then we plot it with date on the x-axis, number of steps on the y-axis
+as a histogram of blue date columns
+with a descriptive title and labels
+and horizontal lines to identify the mean and median
+
+```{r}
+
+activity.by.Date.Sum <- activity %>%
+    group_by(date) %>%
+    summarise(num.Steps = sum(steps, na.rm = T))
+
+ggplot(activity.by.Date.Sum, aes(x=date, weight=num.Steps)) + 
+    geom_histogram(binwidth=1, fill="blue") +
+    ylab("Number of Steps") +
+    xlab("") +
+    ggtitle("Total number of steps taken per day") + 
+    geom_hline(aes(yintercept=median(num.Steps, na.rm=T), linetype = paste("Median",median(num.Steps, na.rm=T))), colour = "red") +
+    geom_hline(aes(yintercept=mean(num.Steps, na.rm=T), linetype = paste("Mean",format(round(mean(activity.by.Date.Sum$num.Steps, na.rm = TRUE), 0), nsmall = 0))), colour = "green") + 
+    scale_linetype_manual(name = "", values = c(2, 2), 
+                      guide = guide_legend(override.aes = list(color = c("green", "red"))))
+
+
+```
 
 ## What is the average daily activity pattern?
 
+First we group activity by interval
+and calculate the average number of steps for each group
+and convert the numeric interval to a time
+
+We will need the time when the maximum number of steps were taken
+so we store it in time.Max.Avg.Steps
+
+Then we plot it with time on the x-axis, number of steps on the y-axis
+as a line
+scale the x-axis to make the labels look nicer
+add a descriptive title and labels
+and a vertical line to identify the time.Max.Avg.Steps
+and print the time on the line
+
+
+```{r}
+
+activity.by.Interval.Average <- activity %>%
+    group_by(interval) %>%
+    summarise(avg.Steps = mean(steps, na.rm = T)) %>%
+    mutate(interval = str_pad(interval, 4, pad = "0"),
+           hour = substr(interval,1,2),
+           minute = substr(interval,3,4),
+           time = hms(paste0(hour,":",minute,":00")))
+
+time.Max.Avg.Steps <- activity.by.Interval.Average[activity.by.Interval.Average$avg.Steps == max(activity.by.Interval.Average$avg.Steps),]$interval
+
+ggplot(activity.by.Interval.Average, aes(time, avg.Steps)) + 
+    geom_line() + 
+    scale_x_time(labels = date_format("%H:%M", tz = "CET")) + 
+    xlab("") + ylab("Average Steps") +
+    geom_vline(aes(xintercept = as.numeric(time.Max.Avg.Steps)*37), colour = "blue") + 
+    geom_text(aes(x=as.numeric(time.Max.Avg.Steps)*35, label=time.Max.Avg.Steps, y=20), angle=90, colour = "blue") +
+    ggtitle("Average number of steps taken each interval")
+
+```
 
 
 ## Imputing missing values
 
+First calculate the number of rows with missing values and print it
+
+Then create a function called impute.mean
+that replaces a null value with the mean
+
+We then use this function on activity steps
+grouping by interval to impute for the mean of each interval
+
+And then grouping by date
+to calculate the total number of steps per group
+
+Then we plot it with date on the x-axis, number of steps on the y-axis
+as a histogram of blue date columns
+with a descriptive title and labels
+and horizontal lines to identify the mean and median
+
+```{r}
+
+print(paste("There are", as.character(sum(is.na(activity))), "rows with missing values"))
+
+impute.mean <- function(x) replace(x, is.na(x), mean(x, na.rm = TRUE))
+
+#activity.no.missing <- ddply(activity, ~ interval, transform, steps = impute.mean(steps))
+
+activity.no.missing <- activity %>% 
+    group_by(interval) %>% 
+    mutate(steps = impute.mean(steps))
+#    do(impute.mean(.))
+
+activity.no.missing.by.Date.Sum <- activity.no.missing %>%
+    group_by(date) %>%
+    summarize(num.Steps = sum(steps, na.rm = T))
+
+ggplot(activity.no.missing.by.Date.Sum, aes(x=date, weight=num.Steps)) + 
+    geom_histogram(binwidth=1, fill="blue") +
+    ylab("Number of Steps") +
+    xlab("") +
+    ggtitle("Total number of steps taken per day") + 
+    theme(plot.title = element_text(lineheight=.8, face="bold")) +
+    geom_hline(aes(yintercept=median(num.Steps, na.rm=T), linetype = paste("Median",format(round(mean(activity.no.missing.by.Date.Sum$num.Steps, na.rm = TRUE), 0), nsmall = 0))), colour = "red") +
+    geom_hline(aes(yintercept=mean(num.Steps, na.rm=T), linetype = paste("Mean",format(round(mean(activity.no.missing.by.Date.Sum$num.Steps, na.rm = TRUE), 0), nsmall = 0))), colour = "green") + 
+    scale_linetype_manual(name = "", values = c(2, 2), 
+                      guide = guide_legend(override.aes = list(color = c("green", "red"))))
+
+```
+
+After imputing missing values based on average steps for the interval, the mean and median values both increase.
 
 
 ## Are there differences in activity patterns between weekdays and weekends?
+
+First we create a new variable that determines if the row is a weekend or weekday
+
+then group by weekend/weekday and interval
+to calculate the average number of steps for each group
+
+Then we plot it with time on the x-axis, number of steps on the y-axis
+as a line
+seperated by weekend and weekday
+and add a descriptive title and labels
+
+```{r}
+
+activity.no.missing <- activity.no.missing %>%
+    mutate(dayType = ifelse(wday(date) == 1 | wday(date) == 7, "weekend", "weekday"),
+           intervalChr = str_pad(as.character(interval),4,pad = "0"))
+
+activity.no.missing.by.Interval.Average <- activity.no.missing %>%
+    group_by(dayType, interval) %>%
+    summarize(steps = mean(steps))
+
+ggplot(activity.no.missing.by.Interval.Average, aes(interval, steps)) +
+    geom_line() +
+    facet_grid(as.factor(dayType) ~ .) + 
+    xlab("") + ylab("Average Steps") +
+    ggtitle("Average number of steps taken each interval")
+
+```
+
